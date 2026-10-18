@@ -485,7 +485,8 @@ function collectToolResults(entries: any[]): Map<string, { text: string; isError
 }
 
 function extractSessionMessages(ctx: ExtensionContext) {
-	const messages: Array<{ role: string; content: string; toolName?: string; images?: Array<{ data: string; mimeType: string }> }> = [];
+	const messages: Array<{ role: string; content: string; toolName?: string; images?: Array<{ data: string; mimeType: string }>; turnDurationMs?: number }> = [];
+	let userIdx = -1, userTs = 0;
 	// Buffer images from toolResult entries to attach to the next assistant message
 	let pendingImages: Array<{ data: string; mimeType: string }> = [];
 
@@ -536,7 +537,7 @@ function extractSessionMessages(ctx: ExtensionContext) {
 			} else if (typeof msg.content === "string") {
 				text = msg.content;
 			}
-			if (text.trim()) messages.push({ role: "user", content: text.trim() });
+			if (text.trim()) { userIdx = messages.length; userTs = ts; messages.push({ role: "user", content: text.trim() }); }
 		} else if (msg.role === "assistant") {
 			let text = "";
 			const toolCalls: any[] = [];;
@@ -561,6 +562,8 @@ function extractSessionMessages(ctx: ExtensionContext) {
 			messages.push(...toolCalls);
 			if (text.trim()) {
 				const assistMsg: typeof messages[0] = { role: "assistant", content: text.trim() };
+				if (userIdx >= 0 && userTs > 0 && ts > 0) assistMsg.turnDurationMs = Math.max(0, ts - userTs);
+				userIdx = -1;
 				// Attach buffered images from preceding toolResult
 				if (pendingImages.length > 0) {
 					assistMsg.images = pendingImages;
@@ -574,7 +577,8 @@ function extractSessionMessages(ctx: ExtensionContext) {
 }
 
 function extractThreadMessages(filePath: string) {
-	const messages: Array<{ role: string; content: string; toolName?: string; images?: Array<{ data: string; mimeType: string }> }> = [];
+	const messages: Array<{ role: string; content: string; toolName?: string; images?: Array<{ data: string; mimeType: string }>; turnDurationMs?: number }> = [];
+	let userIdx = -1, userTs = 0;
 	let pendingImages: Array<{ data: string; mimeType: string }> = [];
 	try {
 		const content = readFileSync(filePath, "utf-8");
@@ -619,7 +623,7 @@ function extractThreadMessages(filePath: string) {
 							if (block.type === "text") text += block.text;
 						}
 					} else if (typeof msg.content === "string") text = msg.content;
-					if (text.trim()) messages.push({ role: "user", content: text.trim() });
+					if (text.trim()) { userIdx = messages.length; userTs = ts; messages.push({ role: "user", content: text.trim() }); }
 				} else if (msg?.role === "assistant") {
 					let text = "";
 					const toolCalls: any[] = [];;
@@ -640,6 +644,8 @@ function extractThreadMessages(filePath: string) {
 					messages.push(...toolCalls);
 					if (text.trim()) {
 						const assistMsg: typeof messages[0] = { role: "assistant", content: text.trim() };
+						if (userIdx >= 0 && userTs > 0 && ts > 0) assistMsg.turnDurationMs = Math.max(0, ts - userTs);
+						userIdx = -1;
 						if (pendingImages.length > 0) {
 							assistMsg.images = pendingImages;
 							pendingImages = [];

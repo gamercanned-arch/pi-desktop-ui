@@ -436,6 +436,14 @@ if (sidebarHandle) {
   sidebarHandle.addEventListener("dblclick", () => toggleSidebar());
 }
 
+// Turn-rollup expand/collapse (event delegation — survives re-renders)
+messagesEl.addEventListener("click", (e) => {
+  const header = e.target.closest("[data-turn-header]");
+  if (!header) return;
+  const group = header.closest("[data-turn-group]");
+  if (group) group.classList.toggle("collapsed");
+});
+
 // ─── Navigation ───────────────────────────────────────────────
 
 function setActiveNav(view) {
@@ -1480,9 +1488,24 @@ function renderMessages() {
   }
 
   let html = "";
-  for (const msg of msgs) {
-    const id = ensureMsgId(msg);
-    html += `<div id="${id}">${renderMessageHtml(msg)}</div>`;
+  const segs = buildTurnSegments(msgs);
+  for (const seg of segs) {
+    if (seg.type === "msg") {
+      const id = ensureMsgId(seg.msg);
+      html += `<div id="${id}">${renderMessageHtml(seg.msg)}</div>`;
+    } else {
+      const gid = "turn-" + ensureMsgId(seg.entries[0]);
+      html += `<div class="turn-group${seg.followedByText ? " collapsed" : ""}" id="${gid}" data-turn-group>
+  <div class="turn-group-header" data-turn-header>
+    <span class="material-symbols-outlined chev">expand_more</span>
+    ${seg.followedByText ? '<span style="color:#3b3;"><span class="material-symbols-outlined" style="font-size:13px;">check</span></span>' : '<span style="color:var(--text-dim);"><span class="material-symbols-outlined" style="font-size:13px;">radio_button_unchecked</span></span>'}
+    Worked for ${fmtDur(seg.durationMs)}
+  </div>
+  <div class="turn-group-body">
+    ${seg.entries.map(m => `<div id="${ensureMsgId(m)}">${renderMessageHtml(m)}</div>`).join("")}
+  </div>
+</div>`;
+    }
   }
 
   // Show live thinking block
@@ -2126,6 +2149,37 @@ function fmtDur(ms) {
   return s + "s";
 }
 
+/** Group a message list into turns: a run of thinking/tool rows between a user
+ *  message and its final assistant text collapses into a "Worked for Xs" row. */
+function buildTurnSegments(msgs) {
+  const segments = [];
+  let group = null;
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i];
+    if (m.role === "user") {
+      if (group) { segments.push({ type: "group", entries: group.entries, followedByText: false, durationMs: 0 }); group = null; }
+      segments.push({ type: "msg", msg: m });
+      continue;
+    }
+    if (m.role === "thinking" || m.role === "tool") {
+      if (!group) group = { entries: [] };
+      group.entries.push(m);
+      continue;
+    }
+    if (group) {
+      const liveDur = state.turnDurations ? (state.turnDurations[ensureMsgId(group.entries[0])] || 0) : 0;
+      segments.push({ type: "group", entries: group.entries, followedByText: !!m.content, durationMs: m.turnDurationMs || liveDur });
+      group = null;
+    }
+    segments.push({ type: "msg", msg: m });
+  }
+  if (group) {
+    const liveDur = state.turnDurations ? (state.turnDurations[ensureMsgId(group.entries[0])] || 0) : 0;
+    segments.push({ type: "group", entries: group.entries, followedByText: false, durationMs: liveDur });
+  }
+  return segments;
+}
+
 const CONTEXT_DISC_CIRC = 40.84;
 
 function updateContextDisc(used, limit) {
@@ -2461,6 +2515,8 @@ window.__desktopReceive = function(message) {
       state.isStreaming = true;
       state.streamingText = "";
       state.activeTools = [];
+      state.turnStartedAt = Date.now();
+      state.turnDurations = state.turnDurations || {};
       stopMermaidObserver();
       if (state.activeView === "threads" && !state.viewingOldThread) showWaitingIndicator();
       updateStreamingUI();
@@ -2477,6 +2533,22 @@ window.__desktopReceive = function(message) {
         inputTextEl.disabled = false;
         btnSend.disabled = false;
       }
+      // Roll up the finished turn: measure its duration and re-render grouped
+      const turnDur = state.turnStartedAt ? Date.now() - state.turnStartedAt : 0;
+      state.turnDurations = state.turnDurations || {};
+      const tmsgs = state.messages || [];
+      for (let i = tmsgs.length - 1; i >= 0; i--) {
+        if (tmsgs[i].role === "user") {
+          for (let j = i + 1; j < tmsgs.length; j++) {
+            if (tmsgs[j].role === "thinking" || tmsgs[j].role === "tool") {
+              ensureMsgId(tmsgs[j]);
+              state.turnDurations[tmsgs[j]._id] = turnDur;
+            }
+          }
+          break;
+        }
+      }
+      if (state.activeView === "threads" && !state.viewingOldThread) renderMessages();
       break;
 
     case "message-start":
