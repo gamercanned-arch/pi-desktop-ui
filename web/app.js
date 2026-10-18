@@ -354,16 +354,86 @@ let sidebarCollapsed = false;
 function toggleSidebar() {
   sidebarCollapsed = !sidebarCollapsed;
   if (sidebarCollapsed) {
+    sidebarEl.style.removeProperty("width");
+    sidebarEl.style.removeProperty("min-width");
     sidebarEl.classList.remove("sidebar-expanded");
     sidebarEl.classList.add("sidebar-collapsed");
   } else {
     sidebarEl.classList.remove("sidebar-collapsed");
     sidebarEl.classList.add("sidebar-expanded");
+    applySidebarWidth();
   }
 }
 
 if (btnToggleSidebar) {
   btnToggleSidebar.addEventListener("click", toggleSidebar);
+}
+
+const SIDEBAR_MIN_W = 180;
+const SIDEBAR_MAX_W = 440;
+
+function applySidebarWidth(width) {
+  if (sidebarCollapsed) return;
+  let w = typeof width === "number" && Number.isFinite(width) ? width : null;
+  if (w === null) {
+    try {
+      const saved = parseInt(localStorage.getItem("pi-desktop-sidebar-width") || "", 10);
+      if (Number.isFinite(saved) && saved >= SIDEBAR_MIN_W && saved <= SIDEBAR_MAX_W) w = saved;
+    } catch {}
+  }
+  if (w !== null) {
+    const clamped = Math.max(SIDEBAR_MIN_W, Math.min(SIDEBAR_MAX_W, Math.round(w)));
+    sidebarEl.style.width = clamped + "px";
+    sidebarEl.style.minWidth = clamped + "px";
+  } else {
+    sidebarEl.style.removeProperty("width");
+    sidebarEl.style.removeProperty("min-width");
+  }
+}
+
+function persistSidebarWidth(width) {
+  try { localStorage.setItem("pi-desktop-sidebar-width", String(width)); } catch {}
+  try {
+    if (window.glimpse && typeof window.glimpse.send === "function") {
+      window.glimpse.send({ type: "set-sidebar-width", width });
+    }
+  } catch {}
+}
+
+applySidebarWidth();
+
+const sidebarHandle = document.getElementById("sidebar-resize-handle");
+if (sidebarHandle) {
+  sidebarHandle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    if (sidebarCollapsed) {
+      sidebarCollapsed = false;
+      sidebarEl.classList.remove("sidebar-collapsed");
+      sidebarEl.classList.add("sidebar-expanded");
+    }
+    const startW = sidebarEl.getBoundingClientRect().width;
+    sidebarHandle.classList.add("dragging");
+    sidebarEl.classList.add("dragging");
+    try { sidebarHandle.setPointerCapture(e.pointerId); } catch {}
+    const onMove = (ev) => {
+      const w = Math.max(SIDEBAR_MIN_W, Math.min(SIDEBAR_MAX_W, Math.round(startW + (ev.clientX - startX))));
+      sidebarEl.style.width = w + "px";
+      sidebarEl.style.minWidth = w + "px";
+    };
+    const onUp = () => {
+      sidebarHandle.classList.remove("dragging");
+      sidebarEl.classList.remove("dragging");
+      sidebarHandle.removeEventListener("pointermove", onMove);
+      sidebarHandle.removeEventListener("pointerup", onUp);
+      sidebarHandle.removeEventListener("pointercancel", onUp);
+      persistSidebarWidth(Math.round(sidebarEl.getBoundingClientRect().width));
+    };
+    sidebarHandle.addEventListener("pointermove", onMove);
+    sidebarHandle.addEventListener("pointerup", onUp);
+    sidebarHandle.addEventListener("pointercancel", onUp);
+  });
+  sidebarHandle.addEventListener("dblclick", () => toggleSidebar());
 }
 
 // ─── Navigation ───────────────────────────────────────────────
@@ -2662,6 +2732,7 @@ window.__desktopReceive = function(message) {
       _renderCache.clear();
       if (message.projectName) data.projectName = message.projectName;
       if (message.model) data.model = message.model;
+      if (message.sidebarWidth) applySidebarWidth(message.sidebarWidth);
       if (message.stats) {
         data.inputTokens = message.stats.inputTokens || 0;
         data.outputTokens = message.stats.outputTokens || 0;

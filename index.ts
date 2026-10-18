@@ -89,6 +89,27 @@ function saveHiddenWorkspaces(hidden: Record<string, boolean>): void {
 	} catch {}
 }
 
+function getDesktopStatePath(): string {
+	const home = homedir();
+	return join(home, ".pi", "agent", "desktop-sidebar-width.json");
+}
+
+function loadSidebarWidth(): number | null {
+	try {
+		const parsed = JSON.parse(readFileSync(getDesktopStatePath(), "utf-8"));
+		const w = typeof parsed?.width === "number" ? parsed.width : null;
+		return w !== null && w >= 120 && w <= 600 ? Math.round(w) : null;
+	} catch {
+		return null;
+	}
+}
+
+function saveSidebarWidth(width: number): void {
+	try {
+		writeFileSync(getDesktopStatePath(), JSON.stringify({ width }, null, 2));
+	} catch {}
+}
+
 const BUILTIN_COMMANDS = [
 	{ name: "settings", description: "Open settings menu" },
 	{ name: "model", description: "Select model (opens selector UI)" },
@@ -1227,6 +1248,13 @@ export default function desktopTuiExtension(pi: ExtensionAPI) {
 				break;
 			}
 
+			case "set-sidebar-width": {
+				if (typeof msg.width === "number" && msg.width >= 120 && msg.width <= 600) {
+					saveSidebarWidth(Math.round(msg.width));
+				}
+				break;
+			}
+
 			case "launch-workspace": {
 				if (msg.path && typeof msg.path === "string" && msg.path.length < 1000 && !msg.path.includes("..")) {
 					const targetPath = resolve(normalize(msg.path));
@@ -1719,6 +1747,7 @@ export default function desktopTuiExtension(pi: ExtensionAPI) {
 				previousSessionFile,
 				projectName,
 				model: ctx.model?.id || "no-model",
+				sidebarWidth: loadSidebarWidth(),
 				messages,
 				stats,
 				threads,

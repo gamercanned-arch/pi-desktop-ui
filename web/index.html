@@ -171,6 +171,7 @@
 
   /* Sidebar collapse/expand */
   #sidebar {
+    position: relative;
     transition: width 0.2s ease, min-width 0.2s ease;
     overflow: hidden;
   }
@@ -197,6 +198,36 @@
     justify-content: center;
     padding-left: 8px;
     padding-right: 8px;
+  }
+
+  /* Sidebar drag-resize */
+  #sidebar-resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 6px;
+    z-index: 30;
+    cursor: col-resize;
+  }
+  #sidebar-resize-handle::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 2px;
+    width: 2px;
+    border-radius: 1px;
+    background: transparent;
+    transition: background-color 0.15s ease;
+  }
+  #sidebar-resize-handle:hover::after,
+  #sidebar-resize-handle.dragging::after {
+    background: var(--accent);
+  }
+  #sidebar.dragging {
+    transition: none;
+    user-select: none;
   }
 
   .thread-item { transition: background-color 0.1s; }
@@ -561,6 +592,7 @@
     <div id="project-tree" class="sidebar-expanded-only scrollbar-thin flex-1 overflow-y-auto px-2 pb-3">
       <!-- Filled by JS -->
     </div>
+    <div id="sidebar-resize-handle" title="Drag to resize sidebar — double-click to collapse/expand"></div>
   </aside>
 
   <!-- Main Content -->
