@@ -159,7 +159,7 @@ function fmt(n: number): string {
 }
 
 function getTokenStats(ctx: ExtensionContext) {
-	let input = 0, output = 0, cost = 0, cache = 0;
+	let input = 0, output = 0, cost = 0, cache = 0, contextUsed = 0, contextLimit = 0;
 	try {
 	for (const e of ctx.sessionManager.getBranch()) {
 		if (e.type === "message" && e.message.role === "assistant") {
@@ -170,8 +170,12 @@ function getTokenStats(ctx: ExtensionContext) {
 			cache += (m.usage as any).cacheRead ?? 0;
 		}
 	}
-	} catch { return { input, output, cost, cache }; }
-	return { input, output, cost, cache };
+	try {
+		const usage = (ctx as any).getContextUsage?.();
+		if (usage) { contextUsed = usage.tokens ?? 0; contextLimit = usage.contextWindow ?? 0; }
+	} catch {}
+	} catch { return { input, output, cost, cache, contextUsed, contextLimit }; }
+	return { input, output, cost, cache, contextUsed, contextLimit };
 }
 
 function getSessionThreads(sessionDir: string | null) {

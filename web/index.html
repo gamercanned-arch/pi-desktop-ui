@@ -230,6 +230,10 @@
     user-select: none;
   }
 
+  #context-disc-fill {
+    transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
+  }
+
   .thread-item { transition: background-color 0.1s; }
   .thread-item:hover { background: var(--sidebar-hover); }
   .thread-item.active { background: var(--sidebar-active); font-weight: 500; }
@@ -638,13 +642,15 @@
             <span>Plan</span>
           </button>
           <span>·</span>
-          <span>Enter to send</span>
-          <span>·</span>
-          <span>Shift+Enter for newline</span>
-          <span>·</span>
           <span id="model-label"></span>
           <span>·</span>
           <span id="thinking-label"></span>
+          <span id="context-disc" class="flex items-center" title="">
+            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--border)" stroke-width="2"></circle>
+              <circle id="context-disc-fill" cx="8" cy="8" r="6.5" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="40.84" stroke-dashoffset="40.84" stroke-linecap="round" transform="rotate(-90 8 8)"></circle>
+            </svg>
+          </span>
         </div>
         <div class="flex items-center gap-2">
           <div id="stats-bar" class="flex items-center gap-3 text-[12px] text-pi-text-muted">

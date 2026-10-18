@@ -1666,6 +1666,7 @@ function renderSettingsView() {
     ["Directory", data.cwd],
     ["Git Branch", data.gitBranch || "none"],
     ["Provider", data.provider || "unknown"],
+    ["Session Cost", "$" + ((data.stats && data.stats.cost) || 0).toFixed(4)],
   ];
   let html = `<div class="mx-auto max-w-xl space-y-4 p-4">
     <h2 class="text-lg font-semibold">Settings</h2>
@@ -2119,6 +2120,20 @@ messagesEl.addEventListener("click", (e) => {
 
 // ─── Stats Bar ────────────────────────────────────────────────
 
+const CONTEXT_DISC_CIRC = 40.84;
+
+function updateContextDisc(used, limit) {
+  const disc = document.getElementById("context-disc");
+  const fill = document.getElementById("context-disc-fill");
+  if (!disc || !fill) return;
+  const pct = limit > 0 ? Math.max(0, Math.min(1, used / limit)) : 0;
+  fill.setAttribute("stroke-dashoffset", String(CONTEXT_DISC_CIRC * (1 - pct)));
+  fill.setAttribute("stroke", pct >= 0.9 ? "#ef4444" : pct >= 0.7 ? "#f59e0b" : "var(--accent)");
+  disc.setAttribute("title", limit > 0
+    ? "Context: " + Math.round(pct * 100) + "% · " + fmt(used) + " / " + fmt(limit) + " tokens"
+    : "Context: no usage data yet");
+}
+
 function renderStats() {
   const s = data.stats || {};
   statsBarEl.innerHTML = `
@@ -2126,10 +2141,10 @@ function renderStats() {
     <span>Out ${fmt(s.output || 0)}</span>
     <span>Cache ${fmt(s.cache || 0)}</span>
     <span>Total ${fmt((s.input || 0) + (s.output || 0))}</span>
-    <span>$${(s.cost || 0).toFixed(4)}</span>
   `;
   modelLabelEl.textContent = data.model || "unknown";
   thinkingLabelEl.textContent = data.thinkingLevel || "medium";
+  updateContextDisc(s.contextUsed || 0, s.contextLimit || 0);
 }
 
 // ─── Input Handling ───────────────────────────────────────────
