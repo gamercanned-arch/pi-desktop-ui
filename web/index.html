@@ -163,6 +163,12 @@
   .nav-item:hover { background: var(--sidebar-hover); }
   .nav-item.active { background: var(--sidebar-active); }
 
+  /* Reading column — constrain the chat measure (Claude/ChatGPT-style) */
+  #messages > * {
+    max-width: 760px;
+    margin-inline: auto;
+  }
+
   /* Sidebar collapse/expand */
   #sidebar {
     transition: width 0.2s ease, min-width 0.2s ease;
