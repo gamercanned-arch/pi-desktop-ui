@@ -2149,34 +2149,61 @@ function fmtDur(ms) {
   return s + "s";
 }
 
-/** Group a message list into turns: a run of thinking/tool rows between a user
- *  message and its final assistant text collapses into a "Worked for Xs" row. */
+/** Group a message list into TURNS: everything between a user message and the
+ *  turn's final assistant text (all thinking, tool calls, AND intermediate
+ *  commentary) collapses into a single "Worked for Xs" row. */
 function buildTurnSegments(msgs) {
   const segments = [];
-  let group = null;
+  // The final assistant text of each user span is the turn's answer — it stays
+  // outside the group; every other entry in the span is intermediate work.
+  const finalIdx = new Set();
+  let firstUser = -1;
+  let candidate = -1;
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i];
     if (m.role === "user") {
-      if (group) { segments.push({ type: "group", entries: group.entries, followedByText: false, durationMs: 0 }); group = null; }
+      if (candidate >= 0 && firstUser >= 0) finalIdx.add(candidate);
+      if (firstUser < 0) firstUser = i;
+      candidate = -1;
+    } else if (m.role === "assistant" && m.content && String(m.content).trim()) {
+      candidate = i;
+    }
+  }
+  if (firstUser >= 0 && candidate >= 0) finalIdx.add(candidate);
+
+  const liveDurOf = (entries) => (state.turnDurations ? (state.turnDurations[ensureMsgId(entries[0])] || 0) : 0);
+  let group = null;
+  const flush = (finalMsg) => {
+    if (!group) return;
+    segments.push({
+      type: "group",
+      entries: group.entries,
+      followedByText: !!finalMsg,
+      durationMs: (finalMsg && finalMsg.turnDurationMs) || liveDurOf(group.entries),
+    });
+    group = null;
+  };
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i];
+    if (m.role === "user") {
+      flush(null);
       segments.push({ type: "msg", msg: m });
       continue;
     }
-    if (m.role === "thinking" || m.role === "tool") {
-      if (!group) group = { entries: [] };
-      group.entries.push(m);
+    if (finalIdx.has(i)) {
+      flush(m);
+      segments.push({ type: "msg", msg: m });
       continue;
     }
-    if (group) {
-      const liveDur = state.turnDurations ? (state.turnDurations[ensureMsgId(group.entries[0])] || 0) : 0;
-      segments.push({ type: "group", entries: group.entries, followedByText: !!m.content, durationMs: m.turnDurationMs || liveDur });
-      group = null;
+    if (i < firstUser) {
+      // Content before the first user message (greetings, compaction summaries) — standalone
+      segments.push({ type: "msg", msg: m });
+      continue;
     }
-    segments.push({ type: "msg", msg: m });
+    if (!group) group = { entries: [] };
+    group.entries.push(m);
   }
-  if (group) {
-    const liveDur = state.turnDurations ? (state.turnDurations[ensureMsgId(group.entries[0])] || 0) : 0;
-    segments.push({ type: "group", entries: group.entries, followedByText: false, durationMs: liveDur });
-  }
+  flush(null); // trailing group = in-progress or failed turn (no final text)
   return segments;
 }
 

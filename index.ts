@@ -563,7 +563,6 @@ function extractSessionMessages(ctx: ExtensionContext) {
 			if (text.trim()) {
 				const assistMsg: typeof messages[0] = { role: "assistant", content: text.trim() };
 				if (userIdx >= 0 && userTs > 0 && ts > 0) assistMsg.turnDurationMs = Math.max(0, ts - userTs);
-				userIdx = -1;
 				// Attach buffered images from preceding toolResult
 				if (pendingImages.length > 0) {
 					assistMsg.images = pendingImages;
@@ -645,7 +644,6 @@ function extractThreadMessages(filePath: string) {
 					if (text.trim()) {
 						const assistMsg: typeof messages[0] = { role: "assistant", content: text.trim() };
 						if (userIdx >= 0 && userTs > 0 && ts > 0) assistMsg.turnDurationMs = Math.max(0, ts - userTs);
-						userIdx = -1;
 						if (pendingImages.length > 0) {
 							assistMsg.images = pendingImages;
 							pendingImages = [];
