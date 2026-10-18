@@ -1132,7 +1132,7 @@ function renderMessageHtml(msg) {
       <div class="msg-animate mb-3">
         <details class="rounded-lg border" style="border-color: var(--border);">
           <summary class="cursor-pointer px-3 py-2 text-[12px] font-medium" style="color: var(--text-muted);">
-            <span class="material-symbols-outlined" style="font-size:14px;">psychology_alt</span> Thinking <span class="text-[11px] font-normal" style="color: var(--text-dim);">(${msg.content.length} chars)</span>
+            <span class="material-symbols-outlined" style="font-size:14px;">psychology_alt</span> Thought${msg.durationMs ? ` for ${fmtDur(msg.durationMs)}` : ""}
           </summary>
           <div class="border-t px-3 py-2" style="border-color: var(--border); max-height: 300px; overflow-y: auto;">
             <pre class="text-[12px] whitespace-pre-wrap" style="color:var(--text-muted);">${escapeHtml(msg.content)}</pre>
@@ -2120,6 +2120,12 @@ messagesEl.addEventListener("click", (e) => {
 
 // ─── Stats Bar ────────────────────────────────────────────────
 
+function fmtDur(ms) {
+  const s = Math.round((ms || 0) / 1000);
+  if (s >= 60) return Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
+  return s + "s";
+}
+
 const CONTEXT_DISC_CIRC = 40.84;
 
 function updateContextDisc(used, limit) {
@@ -2498,6 +2504,7 @@ window.__desktopReceive = function(message) {
     case "thinking-start":
       state.isThinking = true;
       state.thinkingText = "";
+      state.thinkingStartedAt = Date.now();
       if (state.activeView === "threads" && !state.viewingOldThread) renderMessages();
       break;
 
@@ -2509,7 +2516,7 @@ window.__desktopReceive = function(message) {
     case "thinking-end":
       // Persist thinking text as a collapsed message
       if (state.thinkingText.trim()) {
-        const thinkMsg = { role: "thinking", content: state.thinkingText };
+        const thinkMsg = { role: "thinking", content: state.thinkingText, durationMs: state.thinkingStartedAt ? Date.now() - state.thinkingStartedAt : 0 };
         state.messages.push(thinkMsg);
         if (state.activeView === "threads" && !state.viewingOldThread) {
           appendMessage(thinkMsg);

@@ -468,12 +468,36 @@ function searchSessionThreads(sessionDir: string | null, query: string): Array<{
 	return results;
 }
 
+/** Pair toolResult entries by toolCallId so extracted tool rows carry their output. */
+function collectToolResults(entries: any[]): Map<string, { text: string; isError: boolean }> {
+	const results = new Map<string, { text: string; isError: boolean }>();
+	for (const e of entries) {
+		if (e?.type === "message" && e.message?.role === "toolResult") {
+			const m: any = e.message;
+			let text = "";
+			if (Array.isArray(m.content)) {
+				for (const b of m.content) if (typeof b?.text === "string") text += b.text;
+			} else if (typeof m.content === "string") text = m.content;
+			results.set(String(m.toolCallId ?? ""), { text: text.slice(0, 3000), isError: !!m.isError });
+		}
+	}
+	return results;
+}
+
 function extractSessionMessages(ctx: ExtensionContext) {
 	const messages: Array<{ role: string; content: string; toolName?: string; images?: Array<{ data: string; mimeType: string }> }> = [];
 	// Buffer images from toolResult entries to attach to the next assistant message
 	let pendingImages: Array<{ data: string; mimeType: string }> = [];
 
-	for (const e of ctx.sessionManager.getBranch()) {
+	const branch = ctx.sessionManager.getBranch();
+	const toolResults = collectToolResults(branch as any[]);
+	let prevTs = 0;
+	let lastThinking: { durationMs?: number } | null = null;
+	for (const e of branch) {
+		const ts = (e as any)?.timestamp ? Date.parse(String((e as any).timestamp)) : 0;
+		if (lastThinking && prevTs > 0 && ts > 0) lastThinking.durationMs = Math.max(0, ts - prevTs);
+		lastThinking = null;
+		prevTs = ts;
 		if (e.type === "compaction") {
 			// Show compacted history as a summary message
 			const ce = e as any;
@@ -515,12 +539,19 @@ function extractSessionMessages(ctx: ExtensionContext) {
 			if (text.trim()) messages.push({ role: "user", content: text.trim() });
 		} else if (msg.role === "assistant") {
 			let text = "";
-			const toolCalls: Array<{ role: string; content: string; toolName?: string }> = [];
+			const toolCalls: any[] = [];;
 			if (Array.isArray(msg.content)) {
 				for (const block of msg.content) {
 					if ((block as any).type === "text") text += (block as any).text;
-					else if ((block as any).type === "tool_use") {
-						toolCalls.push({ role: "tool", content: JSON.stringify((block as any).input || {}, null, 2).slice(0, 300), toolName: (block as any).name });
+					else if ((block as any).type === "toolCall" || (block as any).type === "tool_use") {
+						const b: any = block;
+						const id = String(b.id ?? b.toolCallId ?? "");
+						const res = id ? toolResults.get(id) : undefined;
+						toolCalls.push({ role: "tool", content: JSON.stringify(b.input || {}, null, 2).slice(0, 300), toolName: b.name, toolCallId: id, resultText: res?.text, isError: res?.isError });
+					} else if ((block as any).type === "thinking" && (block as any).thinking) {
+						const thinkMsg: { role: string; content: string; durationMs?: number } = { role: "thinking", content: String((block as any).thinking).slice(0, 20000) };
+						messages.push(thinkMsg);
+						lastThinking = thinkMsg;
 					}
 				}
 			} else if (typeof msg.content === "string") {
@@ -547,10 +578,17 @@ function extractThreadMessages(filePath: string) {
 	let pendingImages: Array<{ data: string; mimeType: string }> = [];
 	try {
 		const content = readFileSync(filePath, "utf-8");
-		for (const line of content.split("\n")) {
-			if (!line.trim()) continue;
+		const lines = content.split("\n").filter(l => l.trim());
+		const toolResults = collectToolResults(lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean));
+		let prevTs = 0;
+		let lastThinking: { durationMs?: number } | null = null;
+		for (const line of lines) {
 			try {
 				const entry = JSON.parse(line);
+				const ts = entry?.timestamp ? Date.parse(String(entry.timestamp)) : 0;
+				if (lastThinking && prevTs > 0 && ts > 0) lastThinking.durationMs = Math.max(0, ts - prevTs);
+				lastThinking = null;
+				prevTs = ts;
 				if (entry.type === "compaction" && entry.summary) {
 					messages.push({ role: "assistant", content: entry.summary });
 					continue;
@@ -584,12 +622,18 @@ function extractThreadMessages(filePath: string) {
 					if (text.trim()) messages.push({ role: "user", content: text.trim() });
 				} else if (msg?.role === "assistant") {
 					let text = "";
-					const toolCalls: typeof messages = [];
+					const toolCalls: any[] = [];;
 					if (Array.isArray(msg.content)) {
 						for (const block of msg.content) {
 							if (block.type === "text") text += block.text;
-							else if (block.type === "tool_use") {
-								toolCalls.push({ role: "tool", content: JSON.stringify(block.input || {}, null, 2).slice(0, 300), toolName: block.name });
+							else if (block.type === "toolCall" || block.type === "tool_use") {
+								const id = String(block.id ?? block.toolCallId ?? "");
+								const res = id ? toolResults.get(id) : undefined;
+								toolCalls.push({ role: "tool", content: JSON.stringify(block.input || {}, null, 2).slice(0, 300), toolName: block.name, toolCallId: id, resultText: res?.text, isError: res?.isError });
+							} else if (block.type === "thinking" && block.thinking) {
+								const thinkMsg: { role: string; content: string; durationMs?: number } = { role: "thinking", content: String(block.thinking).slice(0, 20000) };
+								messages.push(thinkMsg);
+								lastThinking = thinkMsg;
 							}
 						}
 					} else if (typeof msg.content === "string") text = msg.content;
